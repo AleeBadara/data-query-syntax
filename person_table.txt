@@ -1,0 +1,3 @@
+nom;prenom;age;ville
+Doe;John;;New York
+Monroe;Jane;43;St Louis
