@@ -2,24 +2,44 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
+use std::io;
 use std::io::prelude::*;
 use std::path::Path;
 
 fn main() {
-    let arguments: Vec<String> = env::args().collect();
+    println!("Welcome to data query syntax.");
+    loop {
+        println!();
+        println!("Enter a query to request your data.");
+        println!("Enter h for help or q to quit.");
+        let mut user_query = String::new();
+        io::stdin()
+            .read_line(&mut user_query)
+            .expect("Unable to read your input.");
+        match &user_query.trim()[..] {
+            "q" => {
+                println!("Program ended.");
+                break;
+            }
+            "h" => show_help(),
+            _ => {
+                // TODO: faire le load_file
 
-    // TODO: faire le load_file
+                let separator = ";";
+                let data = load_file("./person_table.txt");
+                let file_data = get_file_data(&data, separator).unwrap();
+                let result = execute_query(user_query, &file_data);
+                print_result(&result);
+            }
+        }
+    }
+    //let arguments: Vec<String> = env::args().collect();
+}
 
-    let separator = ";";
-    let data = load_file("./person_table.txt");
-    let file_data = get_file_data(&data, separator).unwrap();
-    //println!("{:#?}", file_data);
-
-    //println!("{:#?}", arguments);
-
-    let query = parse_arguments(arguments);
-    let result = execute_query(query, &file_data);
-    print_result(&result);
+fn show_help() {
+    println!("1-To load a file, enter the following command: load(your_file.ext).");
+    println!("2-Exemple to request your data : select().cols(name, age). For more request examples, visit our documentation: http://dqs.io");
+    println!("3-To exit the programm, enter the following command : q");
 }
 
 fn load_file(file_name: &str) -> String {
@@ -146,6 +166,7 @@ fn execute_columns<'a>(
                     Ok(temp_result)
                 }
                 None => {
+                    println!("kooooooooooooooooooooo");
                     return Err("Invalid query: cols not found or invalid.".to_owned());
                 }
             }
@@ -156,14 +177,12 @@ fn execute_columns<'a>(
 fn print_result(result: &Result<HashMap<String, &Vec<String>>, String>) {
     match result {
         Ok(data) => {
+            println!();
             for (key, values) in data.iter() {
-                println!("{}", key);
-                println!("----------");
+                println!("-- {} --", key);
                 for i in 0..values.len() {
                     println!("{}-{}", i + 1, values[i]);
                 }
-                println!();
-                println!("**************");
                 println!();
             }
         }
