@@ -1,45 +1,87 @@
+use colored::*; // lib pour afficher du texte en couleur dans le terminal (https://crates.io/crates/colored)
 use regex::Regex;
 use std::collections::HashMap;
-use std::env;
 use std::fs::File;
 use std::io;
 use std::io::prelude::*;
 use std::path::Path;
 
 fn main() {
-    println!("Welcome to data query syntax.");
+    println!("{}", "Welcome to DQS (Data Query Syntax).".green());
+    let mut file_data: FileData = Default::default();
     loop {
-        println!();
-        println!("Enter a query to request your data.");
-        println!("Enter h for help or q to quit.");
-        let mut user_query = String::new();
-        io::stdin()
-            .read_line(&mut user_query)
-            .expect("Unable to read your input.");
+        show_welcome_message();
+        let user_query = get_user_input();
         match &user_query.trim()[..] {
             "q" => {
-                println!("Program ended.");
+                println!("{}", "Program ended.".green());
                 break;
             }
             "h" => show_help(),
             _ => {
-                // TODO: faire le load_file
-
-                let separator = ";";
-                let data = load_file("./person_table.txt");
-                let file_data = get_file_data(&data, separator).unwrap();
-                let result = execute_query(user_query, &file_data);
-                print_result(&result);
+                if user_query.contains("load") {
+                    verify_load_input(&user_query);
+                    file_data = execute_load_query(&user_query).unwrap();
+                    println!("{}", "Data loaded successfully.".green());
+                }
+                if user_query.contains("select") {
+                    let result = execute_query(user_query, &file_data);
+                    print_result(&result);
+                }
             }
         }
     }
     //let arguments: Vec<String> = env::args().collect();
 }
 
+fn show_welcome_message() {
+    println!();
+    println!(
+        "{}",
+        ">Load your data file and enter queries to request it.".blue()
+    );
+    println!("{}", ">Enter h for help or q to quit.".blue());
+}
+
+fn get_user_input() -> String {
+    let mut user_input = String::new();
+    io::stdin()
+        .lock()
+        .read_line(&mut user_input)
+        .expect("Unable to read your input.");
+    user_input
+}
+
 fn show_help() {
     println!("1-To load a file, enter the following command: load(your_file.ext).");
     println!("2-Exemple to request your data : select().cols(name, age). For more request examples, visit our documentation: http://dqs.io");
     println!("3-To exit the programm, enter the following command : q");
+}
+
+fn execute_load_query(arg: &str) -> Result<FileData, String> {
+    let file_meta_data = get_file_name_and_separator(arg);
+    let data = load_file(&file_meta_data.name);
+    get_file_data(&data, &file_meta_data.separator)
+}
+
+fn get_file_name_and_separator(arg: &str) -> FileName {
+    let open_parenthesis: Vec<_> = arg.match_indices("(").collect();
+    let close_parenthesis: Vec<_> = arg.match_indices(")").collect();
+    if open_parenthesis.len() != close_parenthesis.len() {
+        panic!("invalid input");
+    }
+    let file_name_begin_index = open_parenthesis.get(0).expect("invalid");
+    let file_name_end_index = close_parenthesis.get(0).expect("invalid");
+    let file_name = &arg[file_name_begin_index.0 + 1..file_name_end_index.0];
+
+    let separator_begin_index = open_parenthesis.get(1).expect("invalid");
+    let separator_end_index = close_parenthesis.get(1).expect("invalid");
+    let separator = &arg[separator_begin_index.0 + 1..separator_end_index.0];
+
+    FileName {
+        name: String::from(file_name),
+        separator: String::from(separator),
+    }
 }
 
 fn load_file(file_name: &str) -> String {
@@ -53,7 +95,7 @@ fn load_file(file_name: &str) -> String {
     contents
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct FileData {
     data: HashMap<String, Vec<String>>,
 }
@@ -64,6 +106,11 @@ impl FileData {
             data: HashMap::new(),
         }
     }
+}
+
+struct FileName {
+    name: String,
+    separator: String,
 }
 
 fn get_file_data<'a>(file_content: &'a str, separator: &'a str) -> Result<FileData, String> {
@@ -110,14 +157,6 @@ fn get_file_data<'a>(file_content: &'a str, separator: &'a str) -> Result<FileDa
     Ok(file_data)
 }
 
-fn parse_arguments(args: Vec<String>) -> String {
-    if let Some(query) = args.get(1) {
-        return query.to_string();
-    } else {
-        panic!("No query found. Enter a query in the command line to request data.");
-    }
-}
-
 /**
  * Permet d'exécuter la requête
  */
@@ -125,15 +164,23 @@ fn execute_query<'a>(
     arg: String,
     file_data: &'a FileData,
 ) -> Result<HashMap<String, &'a Vec<String>>, String> {
-    find_select(&arg).unwrap();
+    verify_select_input(&arg);
     execute_columns(&arg, file_data)
 }
 
-fn find_select(arg: &str) -> Result<String, String> {
+fn verify_load_input(arg: &str) {
+    let regex_load = Regex::new(r"load\(.+\..+\)\.separator\(.{1}\)").unwrap();
+    match regex_load.find(&arg) {
+        Some(_) => (),
+        None => panic!("Invalid query. See how to use the load method in the documentation."),
+    }
+}
+
+fn verify_select_input(arg: &str) {
     let regex = Regex::new(r"select\(\)").unwrap();
     match regex.find(&arg) {
-        Some(_) => Ok("select()".to_string()),
-        None => Err("Invalid query: select() not found.".to_owned()),
+        Some(_) => (),
+        None => panic!("Invalid query. See how to use the select method in the documentation."),
     }
 }
 
@@ -166,7 +213,6 @@ fn execute_columns<'a>(
                     Ok(temp_result)
                 }
                 None => {
-                    println!("kooooooooooooooooooooo");
                     return Err("Invalid query: cols not found or invalid.".to_owned());
                 }
             }
