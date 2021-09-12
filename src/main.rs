@@ -1,160 +1,68 @@
-use colored::*; // lib pour afficher du texte en couleur dans le terminal (https://crates.io/crates/colored)
 use regex::Regex;
 use std::collections::HashMap;
-use std::fs::File;
 use std::io;
 use std::io::prelude::*;
-use std::path::Path;
+mod messages;
+mod models;
+mod utils;
+mod validators;
+
+// TODO:
+// créer un dossier validators/mod.rs. il va contenir les méthodes verify_load_input, verify_select_input et d'autres dans le futur
+// créer dossier queries/mod.rs
+// créer un dossier messages/mod.rs qui va contenir les println
+// créer un dossier printer/mod.rs qui va contenir la fonctionnalité qui permet d'afficher les résultats
 
 fn main() {
-    println!("{}", "Welcome to DQS (Data Query Syntax).".green());
-    let mut file_data: FileData = Default::default();
+    messages::show_welcome_title();
+    let mut file_data: models::FileData = Default::default();
     loop {
-        show_welcome_message();
-        let user_query = get_user_input();
-        match &user_query.trim()[..] {
+        messages::show_welcome_message();
+        let user_query = utils::get_user_input();
+        match user_query.trim() {
             "q" => {
-                println!("{}", "Program ended.".green());
+                messages::show_programm_end_message();
                 break;
             }
-            "h" => show_help(),
-            _ => {
-                if user_query.contains("load") {
-                    verify_load_input(&user_query);
-                    file_data = execute_load_query(&user_query).unwrap();
-                    println!("{}", "Data loaded successfully.".green());
+            "h" => utils::show_help(),
+            _ => match find_query(&user_query) {
+                models::Command::LOAD => {
+                    validators::verify_load_input(&user_query);
+                    file_data = execute_load_query(user_query).unwrap();
+                    messages::show_load_success_message();
                 }
-                if user_query.contains("select") {
+                models::Command::SELECT => {
                     let result = execute_query(user_query, &file_data);
                     print_result(&result);
                 }
-            }
-        }
-    }
-    //let arguments: Vec<String> = env::args().collect();
-}
-
-fn show_welcome_message() {
-    println!();
-    println!(
-        "{}",
-        ">Load your data file and enter queries to request it.".blue()
-    );
-    println!("{}", ">Enter h for help or q to quit.".blue());
-}
-
-fn get_user_input() -> String {
-    let mut user_input = String::new();
-    io::stdin()
-        .lock()
-        .read_line(&mut user_input)
-        .expect("Unable to read your input.");
-    user_input
-}
-
-fn show_help() {
-    println!("1-To load a file, enter the following command: load(your_file.ext).");
-    println!("2-Exemple to request your data : select().cols(name, age). For more request examples, visit our documentation: http://dqs.io");
-    println!("3-To exit the programm, enter the following command : q");
-}
-
-fn execute_load_query(arg: &str) -> Result<FileData, String> {
-    let file_meta_data = get_file_name_and_separator(arg);
-    let data = load_file(&file_meta_data.name);
-    get_file_data(&data, &file_meta_data.separator)
-}
-
-fn get_file_name_and_separator(arg: &str) -> FileName {
-    let open_parenthesis: Vec<_> = arg.match_indices("(").collect();
-    let close_parenthesis: Vec<_> = arg.match_indices(")").collect();
-    if open_parenthesis.len() != close_parenthesis.len() {
-        panic!("invalid input");
-    }
-    let file_name_begin_index = open_parenthesis.get(0).expect("invalid");
-    let file_name_end_index = close_parenthesis.get(0).expect("invalid");
-    let file_name = &arg[file_name_begin_index.0 + 1..file_name_end_index.0];
-
-    let separator_begin_index = open_parenthesis.get(1).expect("invalid");
-    let separator_end_index = close_parenthesis.get(1).expect("invalid");
-    let separator = &arg[separator_begin_index.0 + 1..separator_end_index.0];
-
-    FileName {
-        name: String::from(file_name),
-        separator: String::from(separator),
-    }
-}
-
-fn load_file(file_name: &str) -> String {
-    let path = Path::new(file_name);
-    let display = path.display();
-    let error_message = format!("Failed to open file {}", display);
-    let mut file = File::open(&path).expect(&error_message);
-    let mut contents = String::new();
-    let error_message = format!("Couldn't read content of file {}", display);
-    file.read_to_string(&mut contents).expect(&error_message);
-    contents
-}
-
-#[derive(Debug, Default)]
-struct FileData {
-    data: HashMap<String, Vec<String>>,
-}
-
-impl FileData {
-    fn new() -> Self {
-        FileData {
-            data: HashMap::new(),
+                models::Command::UMBIGUOUS => {
+                    messages::show_umbiguous_message();
+                }
+                models::Command::UNKNOWN => {
+                    messages::show_unknown_command_message();
+                }
+            },
         }
     }
 }
 
-struct FileName {
-    name: String,
-    separator: String,
+fn find_query(arg: &str) -> models::Command {
+    if arg.contains("load") && arg.contains("select") == false {
+        return models::Command::LOAD;
+    }
+    if arg.contains("select") && arg.contains("load") == false {
+        return models::Command::SELECT;
+    }
+    if arg.contains("select") && arg.contains("load") {
+        return models::Command::UMBIGUOUS;
+    }
+    models::Command::UNKNOWN
 }
 
-fn get_file_data<'a>(file_content: &'a str, separator: &'a str) -> Result<FileData, String> {
-    let mut file_data = FileData::new();
-    let mut header_names = Vec::new();
-    let lines = file_content.lines().enumerate();
-    for (index, line) in lines {
-        if index == 0 {
-            let first_line: Vec<&str> = line.split(separator).collect();
-            for i in 0..first_line.len() {
-                let current_header;
-                if let Some(value) = first_line.get(i) {
-                    current_header = String::from(value.clone());
-                } else {
-                    return Err("Error getting the headers".to_owned());
-                }
-                match file_data.data.get(&current_header) {
-                    Some(_) => {
-                        let error_message =
-                            format!("Duplicated key found in the dataset: {}", current_header);
-                        return Err(error_message);
-                    }
-                    None => {
-                        header_names.push(current_header.to_string());
-                        file_data.data.insert(current_header, Vec::new());
-                    }
-                }
-                //data.insert(current_header, Vec::new());
-            }
-        } else {
-            let values: Vec<&str> = line.split(separator).collect();
-            if values.len() != file_data.data.keys().len() {
-                let error_message = format!("Invalid data at line {}", index);
-                return Err(error_message);
-            }
-            for i in 0..values.len() {
-                if let Some(val) = file_data.data.get_mut(header_names.get(i).unwrap()) {
-                    let current_data = values.get(i).unwrap();
-                    val.push(current_data.to_string());
-                }
-            }
-        }
-    }
-    Ok(file_data)
+fn execute_load_query(arg: String) -> Result<models::FileData, String> {
+    let file_meta_data = utils::get_file_name_and_separator(arg);
+    let data = utils::load_file(&file_meta_data.name);
+    utils::get_file_data(&data, &file_meta_data.separator)
 }
 
 /**
@@ -162,31 +70,15 @@ fn get_file_data<'a>(file_content: &'a str, separator: &'a str) -> Result<FileDa
  */
 fn execute_query<'a>(
     arg: String,
-    file_data: &'a FileData,
+    file_data: &'a models::FileData,
 ) -> Result<HashMap<String, &'a Vec<String>>, String> {
-    verify_select_input(&arg);
+    validators::verify_select_input(&arg);
     execute_columns(&arg, file_data)
-}
-
-fn verify_load_input(arg: &str) {
-    let regex_load = Regex::new(r"load\(.+\..+\)\.separator\(.{1}\)").unwrap();
-    match regex_load.find(&arg) {
-        Some(_) => (),
-        None => panic!("Invalid query. See how to use the load method in the documentation."),
-    }
-}
-
-fn verify_select_input(arg: &str) {
-    let regex = Regex::new(r"select\(\)").unwrap();
-    match regex.find(&arg) {
-        Some(_) => (),
-        None => panic!("Invalid query. See how to use the select method in the documentation."),
-    }
 }
 
 fn execute_columns<'a>(
     arg: &str,
-    file_data: &'a FileData,
+    file_data: &'a models::FileData,
 ) -> Result<HashMap<String, &'a Vec<String>>, String> {
     let col_regex = Regex::new(r"\.cols\(\**\)").unwrap();
     let mut temp_result: HashMap<String, &Vec<String>> = HashMap::new();

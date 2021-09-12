@@ -1,0 +1,8 @@
+how to use a module in another module : 
+https://stackoverflow.com/questions/48071513/how-to-use-one-module-from-another-module-in-a-rust-cargo-project
+La bonne réponse:
+You'll have to include b.rs somewhere, typically with mod b;. If b is a child of a (instead of being a sibling of a), there are two ways to do this:
+
+Recommended: rename a.rs into a/mod.rs and b.rs into a/b.rs. Then you can mod b; in a/mod.rs.
+Instead, you can just #[path = "b.rs"] mod b; in a.rs without renaming sources.
+If b is intended to be a sibling of a (instead of being a child of a), you can just mod b; in main.rs and then use crate::b; in a.rs.
